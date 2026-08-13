@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1 Редактор трассы - Динамический расчет длины</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Titillium+Web:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap');
+        body { font-family: 'Titillium Web', sans-serif; background-color: #0b0f19; color: #f3f4f6; }
+        .f1-red { color: #e10600; }
+        .bg-f1-red { background-color: #e10600; }
+        .glow-effect { box-shadow: 0 0 25px rgba(225, 6, 0, 0.15); }
+        canvas { background: #070b14; border-radius: 0.75rem; display: block; width: 100%; height: auto; }
+        .compound-btn, .time-btn { transition: all 0.15s ease; cursor: pointer; }
+        .compound-btn.active { border-color: #eab308; background-color: rgba(234, 179, 8, 0.2); color: #facc15; }
+        .compound-btn.active-soft { border-color: #ef4444; background-color: rgba(239, 68, 68, 0.2); color: #f87171; }
+        .time-btn.active { background-color: #e10600; border-color: #e10600; color: white; font-weight: bold; }
+        .temp-bar, .wear-bar { transition: width 0.3s ease; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="bg-gray-900 border-b border-gray-800 px-6 py-4 flex justify-between items-center shadow-lg">
+        <div class="flex items-center space-x-3">
+            <div class="bg-f1-red text-white font-black px-3 py-1.5 rounded skew-x-[-10deg] tracking-wider text-xl">F1</div>
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h1 class="text-xl font-bold tracking-wide uppercase text-white" id="header-track-name">Моя гоночная трасса</h1>
+                    <button onclick="changeTrackName()" class="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-0.5 rounded border border-gray-700 transition" title="Изменить название трассы">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                </div>
+                <p class="text-xs text-gray-400">Динамический расчет длины при изменении формы трека</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4 text-sm">
+            <div class="flex items-center space-x-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700">
+                <i class="fa-solid fa-road text-red-500"></i>
+                <span class="text-gray-400">Дистанция:</span> <span id="tele-dist" class="font-bold text-white font-mono">0.00 / 4.00 км</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-700">
+                <i class="fa-solid fa-gauge-high text-yellow-400"></i>
+                <span class="text-gray-400">Сектор:</span> <span id="tele-sector" class="font-bold text-red-400">Сектор 1</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 p-6 grid grid-cols-1 lg:grid-cols-4 gap-6 max-w-[1700px] mx-auto w-full">
+        
+        <!-- Left Panel: Controls & Telemetry -->
+        <div class="lg:col-span-1 flex flex-col space-y-6">
+            <!-- Configuration & Time Controls Card -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 glow-effect">
+                <h2 class="text-base font-bold uppercase tracking-wider mb-4 border-b border-gray-800 pb-2 flex items-center justify-between">
+                    <span><i class="fa-solid fa-sliders mr-2 text-f1-red"></i>Параметры гонки</span>
+                    <span id="lap-counter" class="text-xs bg-gray-800 px-2.5 py-1 rounded text-red-400 font-mono">Круг 1 / 50</span>
+                </h2>
+
+                <!-- Tyre Compound Selection -->
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-2">Состав шин Pirelli</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="setCompound('C3')" id="btn-C3" class="compound-btn px-3 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-gray-800 text-gray-300 hover:border-yellow-500 transition">
+                            C3 (Hard)
+                        </button>
+                        <button onclick="setCompound('C4')" id="btn-C4" class="compound-btn px-3 py-2 rounded-lg text-xs font-bold border border-yellow-500 bg-yellow-500/20 text-yellow-400 transition active">
+                            C4 (Medium)
+                        </button>
+                        <button onclick="setCompound('C5')" id="btn-C5" class="compound-btn px-3 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-gray-800 text-gray-300 hover:border-red-500 transition">
+                            C5 (Soft)
+                        </button>
+                    </div>
+                    <p id="compound-desc" class="text-xs text-gray-400 mt-2">C4 (Medium): Рабочее окно 90-110°C. Баланс износа.</p>
+                </div>
+
+                <!-- Driving Style -->
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-2">Режим пилотирования</label>
+                    <select id="driving-style" onchange="updateStyle()" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500">
+                        <option value="aggressive">Атака (Высокий износ и нагрев)</option>
+                        <option value="balanced" selected>Гонка (Сбалансированный темп)</option>
+                        <option value="conservative">Экономия (Низкий износ шин)</option>
+                    </select>
+                </div>
+
+                <!-- Editor Mode Toggle -->
+                <div class="mb-4 bg-gray-800/60 p-3 rounded-lg border border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <div class="text-xs font-bold text-white uppercase"><i class="fa-solid fa-pen-to-square mr-1 text-yellow-400"></i>Редактор трассы</div>
+                            <div class="text-[10px] text-gray-400">Двойной клик: вставить точку | ЛКМ: двигать | Клик: сектор | ПКМ: удалить</div>
+                        </div>
+                        <button onclick="toggleEditorMode()" id="editor-toggle-btn" class="px-3 py-1.5 rounded text-xs font-bold bg-gray-700 hover:bg-gray-600 text-white transition">Выкл</button>
+                    </div>
+                </div>
+
+                <!-- Time Controls -->
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-gray-400 uppercase mb-2">Скорость симуляции</label>
+                    <div class="grid grid-cols-5 gap-1 text-center">
+                        <button onclick="setTimeSpeed(0.25)" id="t-025" class="time-btn py-1.5 rounded bg-gray-800 text-xs font-mono border border-gray-700 text-gray-300">0.25x</button>
+                        <button onclick="setTimeSpeed(0.5)" id="t-05" class="time-btn py-1.5 rounded bg-gray-800 text-xs font-mono border border-gray-700 text-gray-300">0.5x</button>
+                        <button onclick="setTimeSpeed(1.0)" id="t-10" class="time-btn py-1.5 rounded bg-f1-red text-xs font-mono border border-red-500 text-white font-bold active">1.0x</button>
+                        <button onclick="setTimeSpeed(2.0)" id="t-20" class="time-btn py-1.5 rounded bg-gray-800 text-xs font-mono border border-gray-700 text-gray-300">2.0x</button>
+                        <button onclick="setTimeSpeed(5.0)" id="t-50" class="time-btn py-1.5 rounded bg-gray-800 text-xs font-mono border border-gray-700 text-gray-300">5.0x</button>
+                    </div>
+                </div>
+
+                <!-- Play / Pause / Reset -->
+                <div class="flex space-x-2 pt-1">
+                    <button onclick="toggleSimulation()" id="play-btn" class="flex-1 bg-f1-red hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg text-sm transition flex items-center justify-center space-x-2">
+                        <i id="play-icon" class="fa-solid fa-pause"></i>
+                        <span id="play-text">Пауза</span>
+                    </button>
+                    <button onclick="resetTrackShape()" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-2 rounded-lg text-sm transition" title="Сбросить к 4 точкам">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                    <button onclick="resetSimulation()" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 px-3 py-2 rounded-lg text-sm transition" title="Сброс гонки">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tyre Temperatures & Wear Card -->
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex-1">
+                <h2 class="text-base font-bold uppercase tracking-wider mb-4 border-b border-gray-800 pb-2 flex items-center">
+                    <i class="fa-solid fa-car-side mr-2 text-f1-red"></i>Состояние шин (Темп. и Износ)
+                </h2>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- FL Tyre -->
+                    <div class="bg-gray-800/60 border border-gray-700/80 rounded-xl p-3 text-center relative">
+                        <div class="text-xs font-bold text-gray-400 uppercase">FL (Перед. Левая)</div>
+                        <div id="temp-fl" class="text-xl font-black text-white my-0.5 font-mono">98°C</div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mb-1">
+                            <div id="bar-fl" class="bg-orange-500 h-full temp-bar" style="width: 75%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-400"><span>Износ:</span><span id="wear-fl" class="font-bold text-yellow-400">4.2%</span></div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mt-0.5">
+                            <div id="wearbar-fl" class="bg-yellow-500 h-full wear-bar" style="width: 4.2%"></div>
+                        </div>
+                    </div>
+
+                    <!-- FR Tyre -->
+                    <div class="bg-gray-800/60 border border-gray-700/80 rounded-xl p-3 text-center relative">
+                        <div class="text-xs font-bold text-gray-400 uppercase">FR (Перед. Правая)</div>
+                        <div id="temp-fr" class="text-xl font-black text-white my-0.5 font-mono">101°C</div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mb-1">
+                            <div id="bar-fr" class="bg-orange-500 h-full temp-bar" style="width: 78%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-400"><span>Износ:</span><span id="wear-fr" class="font-bold text-yellow-400">4.5%</span></div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mt-0.5">
+                            <div id="wearbar-fr" class="bg-yellow-500 h-full wear-bar" style="width: 4.5%"></div>
+                        </div>
+                    </div>
+
+                    <!-- RL Tyre -->
+                    <div class="bg-gray-800/60 border border-gray-700/80 rounded-xl p-3 text-center relative">
+                        <div class="text-xs font-bold text-gray-400 uppercase">RL (Зад. Левая)</div>
+                        <div id="temp-rl" class="text-xl font-black text-white my-0.5 font-mono">104°C</div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mb-1">
+                            <div id="bar-rl" class="bg-red-500 h-full temp-bar" style="width: 82%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-400"><span>Износ:</span><span id="wear-rl" class="font-bold text-orange-400">5.1%</span></div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mt-0.5">
+                            <div id="wearbar-rl" class="bg-orange-500 h-full wear-bar" style="width: 5.1%"></div>
+                        </div>
+                    </div>
+
+                    <!-- RR Tyre -->
+                    <div class="bg-gray-800/60 border border-gray-700/80 rounded-xl p-3 text-center relative">
+                        <div class="text-xs font-bold text-gray-400 uppercase">RR (Зад. Правая)</div>
+                        <div id="temp-rr" class="text-xl font-black text-white my-0.5 font-mono">106°C</div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mb-1">
+                            <div id="bar-rr" class="bg-red-500 h-full temp-bar" style="width: 84%"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-400"><span>Износ:</span><span id="wear-rr" class="font-bold text-orange-400">5.5%</span></div>
+                        <div class="w-full bg-gray-700 h-1.5 rounded-full overflow-hidden mt-0.5">
+                            <div id="wearbar-rr" class="bg-orange-500 h-full wear-bar" style="width: 5.5%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 p-3 bg-gray-800/40 rounded-lg border border-gray-700/50 text-xs space-y-1.5">
+                    <div class="flex justify-between"><span class="text-gray-400">Скорость болида:</span> <span id="tele-speed" class="font-mono font-bold text-white">245 км/ч</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Перегрузка (Lateral G):</span> <span id="tele-g" class="font-mono font-bold text-white">3.4G</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Текущий участок:</span> <span id="tele-zone" class="font-mono font-bold text-yellow-400">Поворот 1</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel: Canvas & Heatmap -->
+        <div class="lg:col-span-3 flex flex-col space-y-6">
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex-1 flex flex-col relative glow-effect">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-base font-bold uppercase tracking-wider flex items-center">
+                        <i class="fa-solid fa-map-location-dot mr-2 text-f1-red"></i>Редактор гоночной трассы
+                    </h2>
+                    <div class="flex items-center space-x-3 text-xs">
+                        <div id="editor-hint" class="text-yellow-400 font-bold hidden"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Редактор: Двойной клик (добавить) | Клик (сменить сектор) | ПКМ (удалить)</div>
+                        <div class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span><span class="text-gray-300">&lt;90°C</span></div>
+                        <div class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span><span class="text-gray-300">90-100°C</span></div>
+                        <div class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span><span class="text-gray-300">100-110°C</span></div>
+                        <div class="flex items-center space-x-1.5"><span class="w-3 h-3 rounded-full bg-red-600 inline-block"></span><span class="text-gray-300">&gt;110°C</span></div>
+                    </div>
+                </div>
+
+                <div class="relative flex-1 flex items-center justify-center bg-[#070b14] rounded-xl overflow-hidden border border-gray-800 min-h-[600px]">
+                    <canvas id="trackCanvas" class="w-full h-full cursor-crosshair"></canvas>
+                    
+                    <!-- Overlay legend -->
+                    <div class="absolute top-4 left-4 bg-gray-900/90 backdrop-blur border border-gray-700/80 p-3 rounded-xl text-xs space-y-1.5 shadow-xl pointer-events-none">
+                        <div class="font-bold text-white border-b border-gray-700 pb-1 mb-1 flex items-center justify-between">
+                            <span id="legend-track-title">Моя трасса</span>
+                            <span id="legend-track-len" class="text-[10px] bg-red-900/60 text-red-300 px-1.5 py-0.5 rounded font-mono">4.00 км</span>
+                        </div>
+                        <div class="flex items-center space-x-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="text-gray-300">Сектор 1 (Красный)</span></div>
+                        <div class="flex items-center space-x-2"><span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span><span class="text-gray-300">Сектор 2 (Бирюзовый)</span></div>
+                        <div class="flex items-center space-x-2"><span class="w-2.5 h-2.5 rounded-full bg-yellow-400"></span><span class="text-gray-300">Сектор 3 (Желтый)</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const canvas = document.getElementById('trackCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let isRunning = true;
+        let timeSpeed = 1.0;
+        let currentCompound = 'C4';
+        let drivingStyle = 'balanced';
+        let editorMode = false;
+        let draggedWaypointIndex = null;
+        let trackName = "Моя гоночная трасса";
+        let totalTrackLengthKm = 4.00;
+
+        let lapCount = 1;
+        let carProgress = 0.0;
+        let carSpeed = 245;
+        let lateralG = 3.2;
+        let currentZoneName = "Старт / Финиш";
+        let currentSector = "Сектор 1";
+
+        let tyreTemps = { fl: 98, fr: 101, rl: 104, rr: 106 };
+        let tyreWear = { fl: 0.0, fr: 0.0, rl: 0.0, rr: 0.0 };
+        let heatTrail = [];
+
+        const defaultWaypoints = [
+            { x: 0.30, y: 0.25, name: "Поворот 1", sector: "Сектор 1", type: "corner", speed: 140 },
+            { x: 0.70, y: 0.25, name: "Поворот 2", sector: "Сектор 1", type: "corner", speed: 140 },
+            { x: 0.70, y: 0.75, name: "Поворот 3", sector: "Сектор 2", type: "heavy-brake", speed: 90 },
+            { x: 0.30, y: 0.75, name: "Старт / Финиш", sector: "Сектор 3", type: "straight", speed: 250, isStartFinish: true }
+        ];
+
+        let trackWaypoints = JSON.parse(JSON.stringify(defaultWaypoints));
+
+        function changeTrackName() {
+            let newName = prompt("Введите название вашей гоночной трассы:", trackName);
+            if (newName && newName.trim() !== "") {
+                trackName = newName.trim();
+                document.getElementById('header-track-name').innerText = trackName;
+                document.getElementById('legend-track-title').innerText = trackName;
+            }
+        }
+
+        function calculateTrackLength() {
+            let totalPixels = 0;
+            let samples = 350;
+            let prevX = null, prevY = null;
+            let cWidth = canvas.width || 800;
+            let cHeight = canvas.height || 600;
+
+            for (let i = 0; i <= samples; i++) {
+                let t = i / samples;
+                let pt = getTrackPoint(t);
+                let px = pt.x * cWidth;
+                let py = pt.y * cHeight;
+                if (prevX !== null) {
+                    totalPixels += Math.hypot(px - prevX, py - prevY);
+                }
+                prevX = px;
+                prevY = py;
+            }
+            // Scale pixels to km (approx 200 pixels = 1 km)
+            let km = (totalPixels / 220).toFixed(2);
+            totalTrackLengthKm = Math.max(1.0, parseFloat(km));
+            document.getElementById('legend-track-len').innerText = totalTrackLengthKm.toFixed(2) + " км";
+        }
+
+        function renumberWaypoints() {
+            trackWaypoints.forEach((pt, idx) => {
+                if (idx === trackWaypoints.length - 1) {
+                    pt.name = "Старт / Финиш";
+                } else {
+                    pt.name = `Поворот ${idx + 1}`;
+                }
+            });
+            calculateTrackLength();
+        }
+
+        function resetTrackShape() {
+            trackWaypoints = JSON.parse(JSON.stringify(defaultWaypoints));
+            renumberWaypoints();
+        }
+
+        function toggleEditorMode() {
+            editorMode = !editorMode;
+            const btn = document.getElementById('editor-toggle-btn');
+            const hint = document.getElementById('editor-hint');
+            if(editorMode) {
+                btn.className = "px-3 py-1.5 rounded text-xs font-bold bg-yellow-600 hover:bg-yellow-500 text-white transition";
+                btn.innerText = "Вкл";
+                hint.classList.remove('hidden');
+            } else {
+                btn.className = "px-3 py-1.5 rounded text-xs font-bold bg-gray-700 hover:bg-gray-600 text-white transition";
+                btn.innerText = "Выкл";
+                hint.classList.add('hidden');
+            }
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (!editorMode) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left) / canvas.width;
+            const mouseY = (e.clientY - rect.top) / canvas.height;
+
+            if (e.button === 0) {
+                let clickedIdx = -1;
+                trackWaypoints.forEach((pt, idx) => {
+                    let dx = pt.x - mouseX;
+                    let dy = pt.y - mouseY;
+                    if (Math.sqrt(dx*dx + dy*dy) < 0.05) {
+                        clickedIdx = idx;
+                    }
+                });
+
+                if (clickedIdx !== -1) {
+                    draggedWaypointIndex = clickedIdx;
+                    let pt = trackWaypoints[clickedIdx];
+                    if (pt.sector === "Сектор 1") pt.sector = "Сектор 2";
+                    else if (pt.sector === "Сектор 2") pt.sector = "Сектор 3";
+                    else pt.sector = "Сектор 1";
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!editorMode || draggedWaypointIndex === null) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = Math.max(0.05, Math.min(0.95, (e.clientX - rect.left) / canvas.width));
+            const mouseY = Math.max(0.05, Math.min(0.95, (e.clientY - rect.top) / canvas.height));
+
+            trackWaypoints[draggedWaypointIndex].x = mouseX;
+            trackWaypoints[draggedWaypointIndex].y = mouseY;
+            calculateTrackLength();
+        });
+
+        window.addEventListener('mouseup', () => {
+            draggedWaypointIndex = null;
+        });
+
+        canvas.addEventListener('dblclick', (e) => {
+            if (!editorMode) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left) / canvas.width;
+            const mouseY = (e.clientY - rect.top) / canvas.height;
+
+            let bestIdx = 0;
+            let minDist = Infinity;
+            for (let i = 0; i < trackWaypoints.length; i++) {
+                let p1 = trackWaypoints[i];
+                let p2 = trackWaypoints[(i + 1) % trackWaypoints.length];
+                let midX = (p1.x + p2.x) / 2;
+                let midY = (p1.y + p2.y) / 2;
+                let dist = Math.hypot(midX - mouseX, midY - mouseY);
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestIdx = i;
+                }
+            }
+
+            trackWaypoints.splice(bestIdx + 1, 0, {
+                x: mouseX,
+                y: mouseY,
+                name: "Поворот",
+                sector: "Сектор 2",
+                type: "corner",
+                speed: 130
+            });
+            renumberWaypoints();
+        });
+
+        canvas.addEventListener('contextmenu', (e) => {
+            if (!editorMode) return;
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left) / canvas.width;
+            const mouseY = (e.clientY - rect.top) / canvas.height;
+
+            trackWaypoints.forEach((pt, idx) => {
+                let dx = pt.x - mouseX;
+                let dy = pt.y - mouseY;
+                if (Math.sqrt(dx*dx + dy*dy) < 0.05 && trackWaypoints.length > 3) {
+                    trackWaypoints.splice(idx, 1);
+                    renumberWaypoints();
+                }
+            });
+        });
+
+        function getTrackPoint(t) {
+            let n = trackWaypoints.length;
+            let scaled = t * n;
+            let idx = Math.floor(scaled);
+            let frac = scaled - idx;
+            
+            let p0 = trackWaypoints[(idx - 1 + n) % n];
+            let p1 = trackWaypoints[idx % n];
+            let p2 = trackWaypoints[(idx + 1) % n];
+            let p3 = trackWaypoints[(idx + 2) % n];
+
+            let x = 0.5 * ( (2 * p1.x) + (-p0.x + p2.x) * frac + (2*p0.x - 5*p1.x + 4*p2.x - p3.x) * frac * frac + (-p0.x + 3*p1.x - 3*p2.x + p3.x) * frac * frac * frac );
+            let y = 0.5 * ( (2 * p1.y) + (-p0.y + p2.y) * frac + (2*p0.y - 5*p1.y + 4*p2.y - p3.y) * frac * frac + (-p0.y + 3*p1.y - 3*p2.y + p3.y) * frac * frac * frac );
+            
+            let speed = p1.speed + (p2.speed - p1.speed) * frac;
+            let type = frac < 0.5 ? p1.type : p2.type;
+            let name = frac < 0.5 ? p1.name : p2.name;
+            let sector = frac < 0.5 ? p1.sector : p2.sector;
+
+            return { x, y, speed, type, name, sector };
+        }
+
+        function setCompound(comp) {
+            currentCompound = comp;
+            document.querySelectorAll('.compound-btn').forEach(btn => {
+                btn.className = 'compound-btn px-3 py-2 rounded-lg text-xs font-bold border border-gray-700 bg-gray-800 text-gray-300 hover:border-yellow-500 transition';
+            });
+            const activeBtn = document.getElementById(`btn-${comp}`);
+            if (comp === 'C3' || comp === 'C4') {
+                activeBtn.className = 'compound-btn px-3 py-2 rounded-lg text-xs font-bold border border-yellow-500 bg-yellow-500/20 text-yellow-400 active';
+            } else if (comp === 'C5') {
+                activeBtn.className = 'compound-btn px-3 py-2 rounded-lg text-xs font-bold border border-red-500 bg-red-500/20 text-red-400 active-soft';
+            }
+            
+            let desc = "";
+            if(comp === 'C3') desc = "C3 (Hard): Окно 85-105°C. Высокая стойкость к износу.";
+            if(comp === 'C4') desc = "C4 (Medium): Окно 90-110°C. Оптимальный выбор.";
+            if(comp === 'C5') desc = "C5 (Soft): Окно 95-115°C. Быстрый нагрев и высокий износ.";
+            document.getElementById('compound-desc').innerText = desc;
+        }
+
+        function updateStyle() {
+            drivingStyle = document.getElementById('driving-style').value;
+        }
+
+        function setTimeSpeed(speed) {
+            timeSpeed = speed;
+            document.querySelectorAll('.time-btn').forEach(b => {
+                b.className = 'time-btn py-1.5 rounded bg-gray-800 text-xs font-mono border border-gray-700 text-gray-300 hover:bg-gray-700';
+            });
+            let id = speed === 0.25 ? 't-025' : (speed === 0.5 ? 't-05' : (speed === 1.0 ? 't-10' : (speed === 2.0 ? 't-20' : 't-50')));
+            document.getElementById(id).className = 'time-btn py-1.5 rounded bg-f1-red text-xs font-mono border border-red-500 text-white font-bold active';
+        }
+
+        function toggleSimulation() {
+            isRunning = !isRunning;
+            const icon = document.getElementById('play-icon');
+            const text = document.getElementById('play-text');
+            if(isRunning) {
+                icon.className = "fa-solid fa-pause";
+                text.innerText = "Пауза";
+            } else {
+                icon.className = "fa-solid fa-play";
+                text.innerText = "Старт";
+            }
+        }
+
+        function stepForward() {
+            if (isRunning) toggleSimulation();
+            updatePhysics(0.012);
+            draw();
+        }
+
+        function resetSimulation() {
+            carProgress = 0;
+            lapCount = 1;
+            heatTrail = [];
+            tyreTemps = { fl: 98, fr: 101, rl: 104, rr: 106 };
+            tyreWear = { fl: 0.0, fr: 0.0, rl: 0.0, rr: 0.0 };
+            document.getElementById('lap-counter').innerText = `Круг 1 / 50`;
+            draw();
+        }
+
+        function updatePhysics(dt) {
+            if (!isRunning) return;
+
+            let speedMult = drivingStyle === 'aggressive' ? 1.12 : (drivingStyle === 'conservative' ? 0.88 : 1.0);
+            
+            carProgress += 0.0015 * speedMult * timeSpeed;
+            if (carProgress >= 1.0) {
+                carProgress = 0;
+                lapCount++;
+                if(lapCount > 50) lapCount = 1;
+                document.getElementById('lap-counter').innerText = `Круг ${lapCount} / 50`;
+            }
+
+            let currentKm = (carProgress * totalTrackLengthKm).toFixed(2);
+            document.getElementById('tele-dist').innerText = `${currentKm} / ${totalTrackLengthKm.toFixed(2)} км`;
+
+            let info = getTrackPoint(carProgress);
+            carSpeed = Math.round(info.speed * speedMult);
+            currentZoneName = info.name;
+            currentSector = info.sector;
+            document.getElementById('tele-sector').innerText = currentSector;
+
+            let compoundFactor = currentCompound === 'C5' ? 1.10 : (currentCompound === 'C3' ? 0.92 : 1.0);
+            let styleAdd = drivingStyle === 'aggressive' ? 7 : (drivingStyle === 'conservative' ? -5 : 0);
+
+            let tFl = 95, tFr = 98, tRl = 100, tRr = 103;
+            if (info.type === 'heavy-brake') {
+                tFl = 114; tFr = 117; tRl = 103; tRr = 105;
+                lateralG = (3.7 + Math.random() * 0.5).toFixed(1);
+            } else if (info.type === 'corner') {
+                tFl = 106; tFr = 109; tRl = 108; tRr = 111;
+                lateralG = (3.1 + Math.random() * 0.4).toFixed(1);
+            } else if (info.type === 'straight') {
+                tFl = 89; tFr = 91; tRl = 93; tRr = 95;
+                lateralG = (0.4 + Math.random() * 0.2).toFixed(1);
+            } else {
+                tFl = 98; tFr = 100; tRl = 102; tRr = 104;
+                lateralG = (2.2 + Math.random() * 0.3).toFixed(1);
+            }
+
+            let lerpSpeed = 0.07 * timeSpeed;
+            tyreTemps.fl += ((tFl * compoundFactor + styleAdd) - tyreTemps.fl) * lerpSpeed;
+            tyreTemps.fr += ((tFr * compoundFactor + styleAdd) - tyreTemps.fr) * lerpSpeed;
+            tyreTemps.rl += ((tRl * compoundFactor + styleAdd) - tyreTemps.rl) * lerpSpeed;
+            tyreTemps.rr += ((tRr * compoundFactor + styleAdd) - tyreTemps.rr) * lerpSpeed;
+
+            let compoundWearMult = currentCompound === 'C5' ? 0.0018 : (currentCompound === 'C3' ? 0.0009 : 0.0013);
+            let styleWearMult = drivingStyle === 'aggressive' ? 1.4 : (drivingStyle === 'conservative' ? 0.75 : 1.0);
+            
+            ['fl', 'fr', 'rl', 'rr'].forEach(pos => {
+                let tempPen = tyreTemps[pos] > 110 ? 1.6 : 1.0;
+                tyreWear[pos] += compoundWearMult * styleWearMult * tempPen * timeSpeed * 0.1;
+                if(tyreWear[pos] > 100) tyreWear[pos] = 100;
+            });
+
+            let cWidth = canvas.width;
+            let cHeight = canvas.height;
+            let px = info.x * cWidth;
+            let py = info.y * cHeight;
+            let avgTemp = (tyreTemps.fl + tyreTemps.fr + tyreTemps.rl + tyreTemps.rr) / 4;
+
+            heatTrail.push({ x: px, y: py, temp: avgTemp, alpha: 1.0 });
+            if (heatTrail.length > 350) heatTrail.shift();
+            heatTrail.forEach(p => p.alpha -= 0.0025 * timeSpeed);
+            heatTrail = heatTrail.filter(p => p.alpha > 0);
+
+            updateTyreUI('fl', tyreTemps.fl, tyreWear.fl);
+            updateTyreUI('fr', tyreTemps.fr, tyreWear.fr);
+            updateTyreUI('rl', tyreTemps.rl, tyreWear.rl);
+            updateTyreUI('rr', tyreTemps.rr, tyreWear.rr);
+
+            document.getElementById('tele-speed').innerText = carSpeed + ' км/ч';
+            document.getElementById('tele-g').innerText = lateralG + 'G';
+            document.getElementById('tele-zone').innerText = currentZoneName;
+        }
+
+        function updateTyreUI(pos, temp, wear) {
+            let tRounded = Math.round(temp);
+            document.getElementById(`temp-${pos}`).innerText = tRounded + '°C';
+            document.getElementById(`bar-${pos}`).style.width = Math.min(100, Math.max(20, (temp / 130) * 100)) + '%';
+            
+            let wearVal = wear.toFixed(1) + '%';
+            document.getElementById(`wear-${pos}`).innerText = wearVal;
+            document.getElementById(`wearbar-${pos}`).style.width = wear + '%';
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let cWidth = canvas.width;
+            let cHeight = canvas.height;
+
+            // Grid background
+            ctx.strokeStyle = '#111827';
+            ctx.lineWidth = 1;
+            let step = 45;
+            for(let x=0; x<cWidth; x+=step) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,cHeight); ctx.stroke(); }
+            for(let y=0; y<cHeight; y+=step) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(cWidth,y); ctx.stroke(); }
+
+            // Heat trail blobs
+            heatTrail.forEach(p => {
+                let radius = 26;
+                let grad = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, radius);
+                let col = 'rgba(59, 130, 246, 0)';
+                if (p.temp > 112) col = `rgba(220, 38, 38, ${p.alpha * 0.65})`;
+                else if (p.temp > 102) col = `rgba(234, 179, 8, ${p.alpha * 0.6})`;
+                else if (p.temp > 92) col = `rgba(34, 197, 94, ${p.alpha * 0.55})`;
+                else col = `rgba(59, 130, 246, ${p.alpha * 0.5})`;
+
+                grad.addColorStop(0, col);
+                grad.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw Smooth Curved Track Path
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 20;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            let samples = 400;
+            for (let i = 0; i <= samples; i++) {
+                let t = i / samples;
+                let pt = getTrackPoint(t);
+                let px = pt.x * cWidth;
+                let py = pt.y * cHeight;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.stroke();
+
+            // Draw Track Sectors (Sector 1: Red, Sector 2: Cyan, Sector 3: Yellow)
+            for (let sIdx = 0; sIdx < 3; sIdx++) {
+                let sName = sIdx === 0 ? 'Сектор 1' : (sIdx === 1 ? 'Сектор 2' : 'Сектор 3');
+                ctx.lineWidth = 6;
+                if(sName === 'Сектор 1') ctx.strokeStyle = '#ef4444';
+                else if(sName === 'Сектор 2') ctx.strokeStyle = '#06b6d4';
+                else ctx.strokeStyle = '#eab308';
+
+                ctx.beginPath();
+                let drawing = false;
+                for (let i = 0; i <= samples; i++) {
+                    let t = i / samples;
+                    let pt = getTrackPoint(t);
+                    if (pt.sector === sName) {
+                        let px = pt.x * cWidth;
+                        let py = pt.y * cHeight;
+                        if (!drawing) { ctx.moveTo(px, py); drawing = true; }
+                        else { ctx.lineTo(px, py); }
+                    } else {
+                        if (drawing) { ctx.stroke(); ctx.beginPath(); drawing = false; }
+                    }
+                }
+                if (drawing) ctx.stroke();
+            }
+
+
+            // Draw turn number badges & interactive draggable handles if editorMode is on
+            trackWaypoints.forEach((pt, i) => {
+                let px = pt.x * cWidth;
+                let py = pt.y * cHeight;
+                
+                let badgeColor = pt.sector === 'Сектор 1' ? '#ef4444' : (pt.sector === 'Сектор 2' ? '#06b6d4' : '#eab308');
+                if (editorMode) badgeColor = '#eab308';
+
+                ctx.fillStyle = badgeColor;
+                ctx.beginPath(); ctx.arc(px, py, editorMode ? 13 : 10, 0, Math.PI*2); ctx.fill();
+                ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+                
+                ctx.fillStyle = '#000000';
+                ctx.font = 'bold 9px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                let lbl = i === trackWaypoints.length - 1 ? 'S/F' : (i + 1);
+                ctx.fillText(lbl, px, py);
+            });
+
+            // Draw Car Position Marker
+            let cp = getTrackPoint(carProgress);
+            let cx = cp.x * cWidth;
+            let cy = cp.y * cHeight;
+
+            ctx.shadowColor = '#e10600';
+            ctx.shadowBlur = 18;
+            ctx.fillStyle = '#e10600';
+            ctx.beginPath();
+            ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('F1 BOLID (' + carSpeed + ' km/h)', cx + 14, cy + 4);
+        }
+
+        calculateTrackLength();
+
+        function loop() {
+            updatePhysics(0.016);
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        requestAnimationFrame(loop);
+    </script>
+</body>
+</html>
